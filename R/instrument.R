@@ -847,10 +847,10 @@ currency <- function(primary_id, identifiers = NULL, assign_i=TRUE, ...){
         }
         dargs <- dargs[names(dargs)[!names(dargs) %in% names(ccy)]]
         ccy <- c(ccy,dargs)
-    }        
+    }
     class(ccy)<-c("currency","instrument")
     if (assign_i) {
-        assign(primary_id, ccy, 
+        assign(primary_id, ccy,
                pos=as.environment(.instrument) )
         return(primary_id)
     }
@@ -858,109 +858,239 @@ currency <- function(primary_id, identifiers = NULL, assign_i=TRUE, ...){
 }
 
 
-#' constructor for spot exchange rate instruments
-#' 
-#' Currency symbols (like any symbol) may be any combination of alphanumeric 
-#' characters, but the FX market has a convention that says that the first 
-#' currency in a currency pair is the 'target'  and the second currency in the 
-#' symbol pair is the currency the rate ticks in.  So 'EURUSD' can be read as 
-#' 'USD per 1 EUR'.
-#' 
-#' In \code{FinancialInstrument} the \code{currency} of the instrument should 
-#' be the currency that the spot rate ticks in, so it will typically be the 
-#' second currency listed in the symbol. 
-#' 
-#' Thanks to Garrett See for helping sort out the inconsistencies in different 
-#' naming and calculating conventions. 
-#' @param primary_id string identifier, usually expressed as a currency pair 
-#'   'USDYEN' or 'EURGBP'
-#' @param currency string identifying the currency the exchange rate ticks in
-#' @param counter_currency string identifying the currency which the rate uses 
-#'   as the base 'per 1' multiplier
-#' @param tick_size minimum price change
-#' @param identifiers named list of any other identifiers that should also be 
-#'   stored for this instrument
-#' @param assign_i TRUE/FALSE. Should the instrument be assigned in the 
-#'   \code{.instrument} environment? (Default TRUE)
-#' @param overwrite \code{TRUE} by default.  If \code{FALSE}, an error will
-#'   be thrown if there is already an instrument defined with the same 
-#'   \code{primary_id}.
-#' @param ... any other passthru parameters
-#' @references http://financial-dictionary.thefreedictionary.com/Base+Currency
+#' Constructor for spot exchange rate (FX) instruments
+#'
+#' Exchange rate (currency pair) symbols may be any combination of alphanumeric
+#' characters.  The spot FX market has the convention of defining tradeable
+#' currency pairs as ccy1/ccy2 (or often labeled without /, as simply ccy1ccy2),
+#' where the first currency in the currency pair (ccy1) is always the "base"
+#' currency, and the second currency in the currency pair (ccy2) is always the
+#' "quote" currency.  Always remember that the exchange rate measures how many
+#' many units of the quote currency, ccy2, can be exchanged for 1 unit of the
+#' base currency, ccy1.  It is noted that the most actively traded currency
+#' pairs include EUR/USD, USD/JPY, AUD/USD and GBP/USD.  Some precious metals
+#' are also considered by some market participants as currencies themselves,
+#' leading to currency pairs such as XAU/USD and XAG/USD.
+#'
+#'
+#' @details Note that profits/losses from trading a currency pair are measured
+#'   in the quote currency (ccy2).  The number of units traded in an FX
+#'   instrument is measured in the base currency (ccy1).  For example: \itemize{
+#'   \item{EUR/USD = 1.06 means 1 Euro (Euro is the base currency (ccy1)) can be
+#'   exchanged for 1.06 US dollars. USD is the quote currency (ccy2), and
+#'   therefore any profit/loss on trading the instrument EUR/USD is measured in
+#'   US dollars;} \item{Selling (shorting) 100 mio of the contract EUR/USD at
+#'   the price 1.20 means selling 100 million Euros (i.e. the quantity is
+#'   measured in the base currency) to buy 120 million US dollars;} \item{In
+#'   terms of actual FX transactions, buying 10,000USD/CAD @1.3305 (which means
+#'   buying 10,000 units of USD, in exchange for 13,305 CAD) and later selling
+#'   10,000USD/CAD @1.3365 (which means selling 10,000 USD units of USD, in
+#'   exchange for 13,365 CAD) earns a net profit of 60 CAD.  This clearly
+#'   demonstrates that buying (going long) USD/CAD is effectively betting,  at
+#'   the time of entering the position, on the appreciation of USD relative to
+#'   CAD.} }
+#'
+#'   Unfortunately, terminology used for expressing currencies can seem
+#'   confusing, with terms such as direct quotes, indirect quotes, domestic and
+#'   foreign currencies, used by different sources on the web, in finance
+#'   textbooks, etc.  In reality, simply understanding what the base and quote
+#'   currencies represent, as described in this section carefully, is all you
+#'   really need to understand when it comes to spot exchange rates (don't worry
+#'   about the other interchangeable names for the base and quote currencies,
+#'   but if you are interested, Clark (2011) pp. 3-5 provides a good summary).
+#'   Currency traders trade 'currency instruments' using a set of naming
+#'   conventions for the ordering of the two currencies that form the FX
+#'   instrument ccy1/ccy2.  Those not familiar with trading spot FX may find it
+#'   informative to know what some of these naming conventions are, in terms of
+#'   how currency pairs (the traded 'instruments') are expressed by traders.
+#'   These conventions may not always seem consistent in terms of groupings, but
+#'   persist because of historical reasons.  Examples include: \itemize{
+#'   \item{The pair USDCAD is always traded with the base currency being USD. It
+#'   is not conventional for FX traders to refer to this pair as CADUSD, which
+#'   of course equals 1 / USDCAD (More specifically bid(USDCAD) = 1 /
+#'   ask(USDCAD) and ask(USDCAD) = bid(1 /USDCAD));} \item{Pairs related to
+#'   trading yen (JPY) use yen as the quote: USD/JPY, EUR/JPY, AUD/JPY and
+#'   GBP/JPY (i.e. not quoted as JPY/xxx);} \item{EUR is the base currency
+#'   against other currencies, including commodity currencies pairs: EUR/USD,
+#'   EUR/JPY, EUR/CHF, EUR/AUD, EUR/CAD, EUR/NZD ...  (i.e. not quoted as
+#'   xxx/EUR);} \item{Precious metals are typically measured in terms of the USD
+#'   as the quote currency: e.g. XAU/USD (gold), XAG/USD (silver);} \item{Many
+#'   commodity currencies are measured against USD as quote, including AUD/USD,
+#'   ZAR/USD, NZD/USD (which are not quoted as USD/AUD, USD/ZAR, ...).  Yet for
+#'   other commodity currency pairs the quote currency is the commodity currency
+#'   itself when measured against USD, including USD/CAD, USD/NOK and USD/SEK.}
+#'   }
+#'
+#'   As noted in Clark (2011), pp. 3-5, a useful hierarchy of which major
+#'   currencies tend to be ccy1 is: EUR > GBP > AUD > NZD > USD > CAD > CHF
+#'   >JPY.  If in doubt of what the convention is for expressing a currency pair
+#'   (or what the appropriate tick_size is, if that is of concern), visit any
+#'   reputable online FX source, such as OANDA.com, TradingView.com,
+#'   forexfactory.com, for how a given currency pair is expressed.
+#'
+#'   In \code{FinancialInstrument}, the \code{currency} of the instrument should
+#'   be the currency that the spot rate ticks in (the quote currency, ccy2).
+#'
+#'   Thanks to Garrett See for helping sort out the inconsistencies in different
+#'   naming and calculating conventions.
+#' @param primary_id String identifier for the exchange rate (currency pair) of
+#'   the form ccy1ccy2.  Examples: 'EURUSD', 'USDJPY' or 'EURGBP'.
+#'   \code{primary_id} can be a character vector with length greater than one if
+#'   multiple exchange rate instruments are to be created simultaneously.
+#' @param currency String identifying the quote currency (ccy2).  This is the
+#'   currency in which the exchange rate ticks in, and profits are measured in.
+#'   (Only used when primary_id is a length one character vector.)
+#' @param counter_currency String identifying the base currency of the exchange
+#'   rate (ccy1).  We can think of the exchange rate as always measuring how
+#'   much 1 unit of the base currency is worth in the quote currency.  E.g.
+#'   AUDUSD = 0.75 means 1 unit of AUD can be exchanged for 0.75 USD; USDJPY =
+#'   110 implies 1 unit of USD can be exchanged for 110 JPY.  (Only used when
+#'   primary_id is a length one character vector.)
+#' @param tick_size Minimum price change in the quote currency (ccy2);
+#'   \code{tick_size} is always measured in the quote currency, not the base
+#'   currency.  Examples: in EURUSD, the minimum tick size is in USD and
+#'   typically measured as 0.00001; in USDJPY, the tick size is in JPY and
+#'   typically measured as 0.001.
+#' @param identifiers Named list of any other identifiers that may also be
+#'   stored for this instrument.  If creating more than on currency pair when
+#'   calling `\code{exchange_rate}, identifiers must be a list of lists, where
+#'   the length of the parent list equals the length of the primary_id vector
+#'   (see the examples section).
+#' @param assign_i \code{TRUE}/\code{FALSE}. Should the instrument be assigned
+#'   in the \code{.instrument} environment? (Default \code{TRUE}). (Only used
+#'   when primary_id is a length one character vector.)
+#' @param overwrite \code{TRUE} by default.  If \code{FALSE}, an error will be
+#'   thrown if there is already an instrument defined with the same
+#'   \code{primary_id}.  (Only used
+#'   when primary_id is a length one character vector.)
+#' @param ... Any other passthru parameters.
+#'
+#' @references
+#' \url{https://www.oanda.com/forex-trading/learn/intro-to-currency-trading/conventions/}
+#'
+#' \url{http://financial-dictionary.thefreedictionary.com/Base+Currency}
+#'
+#' Clark, Iain J. Foreign Exchange Option Pricing: A Practioner's guide.  Wiley,
+#' 2011.
+#'
+#'
+#' @examples
+#' currency(c("EUR", "USD", "JPY", "GBP", "CHF", "AUD"))
+#'
+#' # Set up individually:
+#' exchange_rate(primary_id = "GBPJPY", currency = "JPY", counter_currency = "GBP", tick_size = 0.001)
+#'
+#' # Set up batch of currency pairs:
+#' symbols <- c("AUDUSD", "EURJPY", "GBPUSD", "USDCHF")
+#' tick_sizes <- c(0.00001, 0.001, 0.00001, 0.00001)
+#'
+#' exchange_rate(primary_id = symbols, tick_size = tick_sizes)
+#'
+#' # Check set up of exchange rate instruments:
+#' getInstrument("AUDUSD")
+#' getInstrument("EURJPY")
+#' getInstrument("USDCHF")
+#'
+#' # Shorthand approach for defining multiple exchange rate instruments simultaneously:
+#' currency(c('EUR', 'USD', 'JPY'))
+#' symbols <- c("EURUSD", "USDJPY")
+#' symbol_pipettes <- c(0.00001, 0.001)
+#'
+#' identifiers <- list(list(max_ticket = 5e6),
+#'                     list(region = "Germany", max_ticket = 4e6))
+#'
+#' # Set up exchange_rate instruments using short hand:
+#' exchange_rate(symbols, tick_size = symbol_pipettes,
+#'               identifiers = identifiers)
+#'
+#' getInstrument("EURUSD")
+#' getInstrument("USDJPY")
+#'
+#' # Alternatively:
+#' mapply(FUN = exchange_rate, primary_id = symbols, tick_size = symbol_pipettes)
+#'
+#' getInstrument("EURUSD")
+#' getInstrument("USDJPY")
+#'
 #' @export
-exchange_rate <- function (primary_id = NULL, currency = NULL, 
-                           counter_currency = NULL, tick_size=0.01, 
-                           identifiers = NULL, assign_i=TRUE, overwrite=TRUE, 
+exchange_rate <- function (primary_id = NULL, currency = NULL,
+                           counter_currency = NULL, tick_size=0.00001,
+                           identifiers = NULL, assign_i=TRUE, overwrite=TRUE,
                            ...){
   if (is.null(primary_id) && !is.null(currency) && !is.null(counter_currency)) {
     primary_id <- c(outer(counter_currency,currency,paste,sep=""))
     same.same <- function(x) substr(x,1,3) == substr(x,4,6)
     primary_id <- primary_id[!same.same(primary_id)]
-  } else if (is.null(primary_id) && (is.null(currency) || 
-             is.null(counter_currency))) {
+  } else if (is.null(primary_id) && (is.null(currency) ||
+                                     is.null(counter_currency))) {
     stop(paste("Must provide either 'primary_id' or both",
                "'currency' and 'counter_currency'"))
   }
   if (!isTRUE(overwrite) && isTRUE(assign_i) &&
-        any(in.use <- primary_id %in% (li <- ls_instruments()))) {
-        stop(paste(paste("In exchange_rate(...) : ",
-                          "overwrite is FALSE and primary_id", 
-                          if (sum(in.use) > 1) "s are" else " is", 
-                          " already in use:\n", sep=""),
-                   paste(intersect(primary_id, li), collapse=", ")), 
-             call.=FALSE)
+      any(in.use <- primary_id %in% (li <- ls_instruments()))) {
+    stop(paste(paste("In exchange_rate(...) : ",
+                     "overwrite is FALSE and primary_id",
+                     if (sum(in.use) > 1) "s are" else " is",
+                     " already in use:\n", sep=""),
+               paste(intersect(primary_id, li), collapse=", ")),
+         call.=FALSE)
   }
-
   if (length(primary_id) > 1) {
-    out <- sapply(primary_id, exchange_rate, identifiers=identifiers, 
-                         assign_i=assign_i, ...=..., simplify=assign_i)
-    return(if (assign_i) unname(out) else out)
+    stopifnot(length(tick_size) == length(primary_id))
+    if (is.null(identifiers)) {
+      identifiers <- lapply(vector("list", length(primary_id)), FUN = function(x) list())
+    } else
+      stopifnot(is.list(identifiers), length(identifiers) == length(primary_id))
+    mapply(FUN = exchange_rate, primary_id = primary_id, tick_size = tick_size,
+           assign_i = TRUE, identifiers = identifiers, ... = ...)
+    return()
   }
   if (is.null(currency)) currency <- substr(primary_id,4,6)
   if (is.null(counter_currency)) counter_currency <- substr(primary_id,1,3)
   if(!exists(currency, where=.instrument,inherits=TRUE)) {
     warning(paste("currency",currency,"not found")) # assumes that we know where to look
   }
-  if(!exists(counter_currency, 
-    where=.instrument,inherits=TRUE)) {
-        warning(paste("counter_currency",counter_currency,"not found")) # assumes that we know where to look
+  if(!exists(counter_currency,
+             where=.instrument,inherits=TRUE)) {
+    warning(paste("counter_currency",counter_currency,"not found")) # assumes that we know where to look
   }
 
-  ## now structure and return
-  instrument(primary_id=primary_id , currency=currency , multiplier=1, 
-             tick_size=tick_size, identifiers = identifiers, ..., 
-             counter_currency=counter_currency, 
+  ## Structure and return single exchange rate instrument.
+  instrument(primary_id=primary_id , currency=currency , multiplier=1,
+             tick_size=tick_size, identifiers = identifiers, ...,
+             counter_currency=counter_currency,
              type=c("exchange_rate","currency"), assign_i=assign_i)
 }
+
 
 #TODO  auction dates, coupons, etc for govmt. bonds
 #' @export
 #' @rdname instrument
-bond <- function(primary_id, currency, multiplier, tick_size=NULL, 
+bond <- function(primary_id, currency, multiplier, tick_size=NULL,
                  identifiers = NULL, assign_i=TRUE, overwrite=TRUE, ...){
     if (missing(currency)) stop ("'currency' is a required argument")
     if (length(primary_id) > 1) stop("'primary_id' must be of length 1 for this function")
     if (!isTRUE(overwrite) && isTRUE(assign_i) && primary_id %in% ls_instruments()) {
-        stop("overwrite is FALSE and the primary_id ", sQuote(primary_id), 
+        stop("overwrite is FALSE and the primary_id ", sQuote(primary_id),
              " is already in use.")
     }
-    instrument(primary_id=primary_id, currency=currency, multiplier=multiplier, 
-               tick_size=tick_size, identifiers = identifiers, ..., type="bond", 
+    instrument(primary_id=primary_id, currency=currency, multiplier=multiplier,
+               tick_size=tick_size, identifiers = identifiers, ..., type="bond",
                assign_i=assign_i )
 }
 
 #' @export
 #' @rdname series_instrument
-bond_series <- function(primary_id , suffix_id, ..., first_traded=NULL, 
-                        maturity=NULL, identifiers = NULL, 
+bond_series <- function(primary_id , suffix_id, ..., first_traded=NULL,
+                        maturity=NULL, identifiers = NULL,
                         payment_schedule=NULL, assign_i=TRUE){
     contract<-try(getInstrument(primary_id))
     if(!inherits(contract,"bond")) {
         stop("bonds contract spec must be defined first")
     }
-    
+
     # TODO add check for Date equivalent in first_traded and expires
-    
+
     ## with bond series we probably need to be more sophisticated,
     ## and find the existing series from prior periods (probably years or months)
     ## and then add the first_traded and expires to the time series by splicing
@@ -970,7 +1100,7 @@ bond_series <- function(primary_id , suffix_id, ..., first_traded=NULL,
         message("updating existing first_traded and maturity for ",id)
         temp_series$first_traded<-c(temp_series$first_traded,first_traded)
         temp_series$maturity<-c(temp_series$maturity,maturity)
-        assign(id, temp_series, 
+        assign(id, temp_series,
                envir=as.environment(.instrument))
     } else {
         dargs<-list(...)
